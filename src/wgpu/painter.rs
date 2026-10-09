@@ -309,13 +309,15 @@ impl Painter {
 
         let user_cmd_bufs = {
             let mut renderer = render_state.renderer.write();
-            for (id, image_delta) in &textures_delta.set {
-                renderer.update_texture(
-                    &render_state.device,
-                    &render_state.queue,
-                    *id,
-                    image_delta,
-                );
+            for (id, image_deltas) in &textures_delta.set {
+                for image_delta in image_deltas {
+                    renderer.update_texture(
+                        &render_state.device,
+                        &render_state.queue,
+                        *id,
+                        image_delta,
+                    );
+                }
             }
 
             renderer.update_buffers(
@@ -340,8 +342,9 @@ impl Painter {
             // egui uses the suboptimal frame as-is and defers reconfiguration to the next frame.
             egui_wgpu::wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             other => match (*self.configuration.on_surface_status)(&other) {
-                SurfaceErrorAction::RecreateSurface => {
+                SurfaceErrorAction::Reconfigure | SurfaceErrorAction::RecreateSurface => {
                     configure_surface(surface_state, render_state, &self.configuration);
+                    self.context.request_repaint_of(viewport_id);
                     return vsync_sec;
                 }
                 SurfaceErrorAction::SkipFrame => {
@@ -463,7 +466,7 @@ impl Painter {
         {
             // wgpu doesn't document where vsync can happen. Maybe here?
             let start = web_time::Instant::now();
-            output_frame.present();
+            render_state.queue.present(output_frame);
             vsync_sec += start.elapsed().as_secs_f32();
         }
 
@@ -496,7 +499,7 @@ fn configure_surface(
     let mut surf_config = SurfaceConfiguration {
         usage: TextureUsages::RENDER_ATTACHMENT,
         format: render_state.target_format,
-        present_mode: config.present_mode,
+        present_mode: config.surface.present_mode,
         alpha_mode: surface_state.alpha_mode,
         view_formats: vec![render_state.target_format],
         ..surface_state
@@ -505,7 +508,7 @@ fn configure_surface(
             .expect("The surface isn't supported by this adapter")
     };
 
-    if let Some(desired_maximum_frame_latency) = config.desired_maximum_frame_latency {
+    if let Some(desired_maximum_frame_latency) = config.surface.desired_maximum_frame_latency {
         surf_config.desired_maximum_frame_latency = desired_maximum_frame_latency;
     }
 
