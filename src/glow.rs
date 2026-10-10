@@ -71,7 +71,7 @@ impl EguiGlow {
     /// Paint the results of the last call to [`Self::run`].
     pub fn paint(&mut self) {
         let pixels_per_point = self.run_output.pixels_per_point;
-        let (textures_delta, shapes) = self.run_output.take();
+        let (mut textures_delta, shapes) = self.run_output.take();
         let clipped_primitives = self.ctx.tessellate(shapes, pixels_per_point);
         // egui laid out for the drawable (physical) size and the GL viewport
         // covers the physical framebuffer, so pass drawable size — not the
@@ -81,7 +81,7 @@ impl EguiGlow {
             screen_size.into(),
             pixels_per_point,
             &clipped_primitives,
-            &textures_delta,
+            &mut textures_delta,
         );
     }
 

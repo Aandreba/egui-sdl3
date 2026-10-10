@@ -78,8 +78,10 @@ impl Painter {
         textures_delta: &TexturesDelta,
         paint_jobs: Vec<ClippedPrimitive>,
     ) -> Result<(), String> {
-        for (id, delta) in &textures_delta.set {
-            self.set_texture(*id, delta);
+        for (id, deltas) in &textures_delta.set {
+            for delta in deltas {
+                self.set_texture(*id, delta);
+            }
         }
 
         self.paint_primitives(pixels_per_point, paint_jobs);
