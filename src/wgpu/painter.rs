@@ -276,13 +276,19 @@ impl Painter {
     /// and the captures captured screenshot if it was requested.
     ///
     /// If `capture_data` isn't empty, a screenshot will be captured.
+    ///
+    /// `textures_delta` is drained as it is applied. If the frame is skipped
+    /// (no render state or surface, or the surface texture couldn't be acquired),
+    /// the unapplied part is left in it; carry it over to the next frame (e.g.
+    /// with [`egui::TexturesDelta::append`]) or call `clear` before dropping it,
+    /// since epaint asserts in debug builds that a dropped delta is empty.
     pub fn paint_and_update_textures(
         &mut self,
         viewport_id: ViewportId,
         pixels_per_point: f32,
         clear_color: [f32; 4],
         clipped_primitives: &[egui::ClippedPrimitive],
-        textures_delta: &egui::TexturesDelta,
+        textures_delta: &mut egui::TexturesDelta,
         capture_data: Vec<egui::UserData>,
     ) -> f32 {
         let capture = !capture_data.is_empty();
@@ -309,13 +315,13 @@ impl Painter {
 
         let user_cmd_bufs = {
             let mut renderer = render_state.renderer.write();
-            for (id, image_deltas) in &textures_delta.set {
+            for (id, image_deltas) in textures_delta.set.drain() {
                 for image_delta in image_deltas {
                     renderer.update_texture(
                         &render_state.device,
                         &render_state.queue,
-                        *id,
-                        image_delta,
+                        id,
+                        &image_delta,
                     );
                 }
             }
@@ -446,8 +452,8 @@ impl Painter {
         // However, once we called `egui_wgpu::wgpu::Queue::submit`, it is up for wgpu to determine how long the underlying gpu resource has to live.
         {
             let mut renderer = render_state.renderer.write();
-            for id in &textures_delta.free {
-                renderer.free_texture(id);
+            for id in textures_delta.free.drain() {
+                renderer.free_texture(&id);
             }
         }
 

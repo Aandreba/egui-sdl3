@@ -102,6 +102,16 @@ impl Default for EguiRunOutput {
     }
 }
 
+impl Drop for EguiRunOutput {
+    fn drop(&mut self) {
+        // Deltas still pending here (e.g. `run` without a following `paint`
+        // before shutdown) have no renderer left to apply them to. Discard them
+        // explicitly: epaint asserts in debug builds that a dropped
+        // `TexturesDelta` is empty.
+        self.textures_delta.clear();
+    }
+}
+
 impl EguiRunOutput {
     /// Run `egui` for one frame and update this output with the results.
     ///
@@ -164,5 +174,25 @@ impl EguiRunOutput {
         let shapes = std::mem::take(&mut self.shapes);
 
         (textures_delta, shapes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EguiRunOutput;
+
+    /// epaint asserts (in debug builds) that a dropped `TexturesDelta` is empty.
+    /// Dropping a run output whose frame was never painted must not trip it.
+    #[test]
+    fn dropping_unpainted_run_output_does_not_panic() {
+        let ctx = egui::Context::default();
+        let output = ctx.run_ui(Default::default(), |_| {});
+
+        let mut run_output = EguiRunOutput::default();
+        run_output.textures_delta.append(output.textures_delta);
+        // The first frame always uploads the font atlas.
+        assert!(!run_output.textures_delta.is_empty());
+
+        drop(run_output);
     }
 }

@@ -119,15 +119,19 @@ impl EguiWgpu {
     /// Paint the results of the last call to [`Self::run`].
     pub fn paint(&mut self, clear_color: [f32; 4]) {
         let pixels_per_point = self.run_output.pixels_per_point;
-        let (textures_delta, shapes) = self.run_output.take();
+        let (mut textures_delta, shapes) = self.run_output.take();
         let clipped_primitives = self.ctx.tessellate(shapes, pixels_per_point);
         self.painter.paint_and_update_textures(
             self.viewport_id,
             pixels_per_point,
             clear_color,
             &clipped_primitives,
-            &textures_delta,
+            &mut textures_delta,
             Vec::with_capacity(0),
         );
+        // The painter drains what it applies. Anything left means the frame was
+        // skipped (no surface yet, or the surface couldn't be acquired); keep it
+        // for the next paint so uploads like the font atlas aren't lost.
+        self.run_output.textures_delta.append(textures_delta);
     }
 }

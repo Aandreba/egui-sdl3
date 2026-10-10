@@ -64,11 +64,11 @@ impl EguiCanvas {
     /// Paint the results of the last call to [`Self::run`].
     pub fn paint(&mut self) {
         let pixels_per_point = self.run_output.pixels_per_point;
-        let (textures_delta, shapes) = self.run_output.take();
+        let (mut textures_delta, shapes) = self.run_output.take();
         let clipped_primitives = self.ctx.tessellate(shapes, pixels_per_point);
         if let Err(e) = self.painter.paint_and_update_textures(
             pixels_per_point,
-            &textures_delta,
+            &mut textures_delta,
             clipped_primitives,
         ) {
             log::error!("Failed to paint: {e}");

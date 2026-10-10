@@ -72,21 +72,24 @@ impl Painter {
     }
 
     /// You are expected to have cleared the color buffer before calling this.
+    ///
+    /// `textures_delta` is drained as it is applied, so it is empty on return
+    /// (epaint asserts in debug builds that a [`TexturesDelta`] is empty when dropped).
     pub fn paint_and_update_textures(
         &mut self,
         pixels_per_point: f32,
-        textures_delta: &TexturesDelta,
+        textures_delta: &mut TexturesDelta,
         paint_jobs: Vec<ClippedPrimitive>,
     ) -> Result<(), String> {
-        for (id, deltas) in &textures_delta.set {
+        for (id, deltas) in textures_delta.set.drain() {
             for delta in deltas {
-                self.set_texture(*id, delta);
+                self.set_texture(id, &delta);
             }
         }
 
         self.paint_primitives(pixels_per_point, paint_jobs);
 
-        for &id in &textures_delta.free {
+        for id in textures_delta.free.drain() {
             self.free_texture(&id);
         }
 
