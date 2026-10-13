@@ -18,6 +18,9 @@ use sdl3::keyboard::Keycode;
 use sdl3::keyboard::Mod;
 use sdl3::keyboard::Scancode;
 use sdl3::mouse::{Cursor, MouseButton, SystemCursor};
+use sdl3::sys::keyboard::{SDL_SetTextInputArea, SDL_StartTextInput, SDL_StopTextInput};
+use sdl3::sys::rect::SDL_Rect;
+use sdl3::sys::video::{SDL_GetWindowFromID, SDL_WindowID};
 use sdl3::video::Window;
 
 #[must_use]
@@ -60,6 +63,12 @@ pub struct State {
     // `set_zoom_factor` after construction is reflected without waiting for a
     // resize event (otherwise the UI lays out for the wrong rect until rotation).
     drawable_size: (u32, u32),
+    /// The window, by id: text input is turned on and off for it. An id rather than a `Window`
+    /// clone, which would keep the window alive
+    window_id: SDL_WindowID,
+    /// Where text input was last placed (window coordinates, and the cursor's offset in it),
+    /// while it's on: `None` while it's off
+    text_input: Option<((i32, i32, i32, i32), i32)>,
 }
 
 /// Represents currently active cursor.
@@ -99,6 +108,8 @@ impl State {
             current_cursor: None,
             window_size,
             drawable_size,
+            window_id: SDL_WindowID(window.id()),
+            text_input: None,
         }
     }
 
@@ -132,9 +143,11 @@ impl State {
     /// * update the cursor
     /// * copy text to the clipboard
     /// * open any clicked urls
-    /// *
+    /// * turn text input on or off (see [`Self::set_text_input`])
     #[inline]
     pub fn handle_platform_output(&mut self, platform_output: egui::PlatformOutput) {
+        self.set_text_input(platform_output.ime);
+
         for command in &platform_output.commands {
             match command {
                 egui::OutputCommand::CopyText(text) => {
@@ -162,6 +175,46 @@ impl State {
         }
 
         self.set_cursor_icon(platform_output.cursor_icon);
+    }
+
+    /// SDL only sends typed text (`TextInput` events) between `SDL_StartTextInput` and
+    /// `SDL_StopTextInput`, so it's on while egui has a text field focused, and off otherwise
+    /// (on some platforms it brings up an on-screen keyboard, or an IME). While on, SDL is told
+    /// where the field and its cursor are, so an IME's candidate window shows next to them.
+    fn set_text_input(&mut self, ime: Option<egui::output::IMEOutput>) {
+        // Gone already: nothing to turn on or off
+        let window = unsafe { SDL_GetWindowFromID(self.window_id) };
+        if window.is_null() {
+            return;
+        }
+
+        let Some(ime) = ime else {
+            if self.text_input.take().is_some() {
+                unsafe { SDL_StopTextInput(window) };
+            }
+            return;
+        };
+
+        // egui points to window coordinates, the inverse of `pos_in_points`
+        let ppp = self.cached_pixels_per_point();
+        let rect = ime.rect;
+        let area = (
+            (rect.min.x * ppp).round() as i32,
+            (rect.min.y * ppp).round() as i32,
+            (rect.width() * ppp).round() as i32,
+            (rect.height() * ppp).round() as i32,
+        );
+        let cursor = ((ime.cursor_rect.min.x - rect.min.x) * ppp).round() as i32;
+
+        if self.text_input.is_none() {
+            unsafe { SDL_StartTextInput(window) };
+        }
+        if self.text_input != Some((area, cursor)) {
+            let (x, y, w, h) = area;
+            let sdl_rect = SDL_Rect { x, y, w, h };
+            unsafe { SDL_SetTextInputArea(window, &sdl_rect, cursor) };
+            self.text_input = Some((area, cursor));
+        }
     }
 
     /// Prepare for a new frame by extracting the accumulated input,
