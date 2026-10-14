@@ -196,7 +196,7 @@ impl State {
         };
 
         // egui points to window coordinates, the inverse of `pos_in_points`
-        let ppp = self.cached_pixels_per_point();
+        let ppp = self.window_coords_per_point();
         let rect = ime.rect;
         let area = (
             (rect.min.x * ppp).round() as i32,
@@ -271,15 +271,32 @@ impl State {
         self.egui_ctx.zoom_factor() * native_ppp
     }
 
-    /// Convert window pixel coordinates to egui points via [`Self::cached_pixels_per_point`].
+    /// How many window coordinates make one egui point.
+    ///
+    /// SDL reports mouse positions (and takes the text input area) in window
+    /// coordinates, which on HiDPI displays (e.g. macOS with
+    /// `high_pixel_density`) are *not* pixels: the drawable is
+    /// `native_pixels_per_point` times larger. Only the zoom factor remains.
+    #[inline]
+    fn window_coords_per_point(&self) -> f32 {
+        let native_ppp = self
+            .egui_input
+            .viewports
+            .get(&self.viewport_id)
+            .and_then(|v| v.native_pixels_per_point)
+            .unwrap_or(1.0);
+        let ppp = self.cached_pixels_per_point();
+        if native_ppp > 0.0 && ppp > 0.0 {
+            ppp / native_ppp
+        } else {
+            1.0
+        }
+    }
+
+    /// Convert window coordinates to egui points via [`Self::window_coords_per_point`].
     #[inline]
     fn pos_in_points(&self, x: f32, y: f32) -> egui::Pos2 {
-        let ppp = self.cached_pixels_per_point();
-        if ppp > 0.0 {
-            egui::pos2(x, y) / ppp
-        } else {
-            egui::pos2(x, y)
-        }
+        egui::pos2(x, y) / self.window_coords_per_point()
     }
 
     /// Call this when there is a new event.
